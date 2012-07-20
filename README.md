@@ -21,9 +21,7 @@ The form automatically downloads the latest version of the repository
 from GitHub. It is stored in a cache. The second time a given version
 is required it is not downloaded again.
 
-Currently only the latest version can be downloaded automatically.
-
-This module do not require the user to have the command line 
-program "git" installed. The source is downloaded as a zip-file
-and unpacked using dherman's unzip package from PLaneT.
-
+It is possible to use *head* as the commit-id in order to get
+the latest version from GitHub. Using an explicit commit-id is faster 
+though. When using *head* a http request to GitHub is needed to
+establish the commit-id of the head.
