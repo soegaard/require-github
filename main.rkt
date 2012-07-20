@@ -1,14 +1,16 @@
 #lang racket
 
-;;;
-;;; TODO: Currently only the latest version of a particular branch 
-;;;       can be downloaded automatically.
-
 (module download-github racket
   (require net/url
-           (planet dherman/zip:2:1/unzip))
+           (planet dherman/zip:2:1/unzip)
+           racket/runtime-path)
+  (provide download-github
+           clone-github
+           the-repos-dir
+           the-tmp-dir)
   
-  (provide download-github)
+  (define-runtime-path the-repos-dir "repos")
+  (define-runtime-path the-tmp-dir   "tmp")
   
   (define (github-zip-saveas-filename user repo branch)
     (format "~a-~a-~a.zip" user repo branch))
@@ -62,7 +64,48 @@
       (copy-directory/files repo-dir cached-repo-dir)
       (delete-directory/files repo-dir)
       ; return the new directory
-      (values repo-dir cached-repo-dir))))
+      (values repo-dir cached-repo-dir)))
+  
+  (define (clone user repo)
+    (define url (format (format "http://github.com/~a/~a.git" user repo)))
+    (system (string-append "git clone " url)))
+  
+  (define (checkout commit-id)
+    (system (format "git checkout ~a" commit-id)))
+  
+  (define (clone-github 
+           user repo 
+           #:branch    [branch "master"] 
+           #:commit-id [commit-id #f]
+           #:exists    [exists-mode 'replace])
+    ; make sure repos/ exists
+    (unless (directory-exists? "repos")
+      (make-directory "repos"))
+    ; make sure tmp/ is empty
+    (when (directory-exists? the-tmp-dir)
+      (delete-directory/files "tmp"))    
+    (unless (directory-exists? the-tmp-dir)
+      (make-directory "tmp"))
+    (let ([original-dir (current-directory)])
+      (current-directory the-tmp-dir)
+      ; clone repository using git clone
+      (clone user repo)
+      ; checkout the given commit-id
+      (when (equal? "head" (format "~a" commit-id))
+        (set! commit-id #f))
+      (define repo-dir-in-tmp (build-path the-tmp-dir (format "~a" repo)))
+      (when commit-id
+        (current-directory repo-dir-in-tmp)
+        (checkout commit-id))
+      (unless commit-id
+        (error "todo: find commit-id for head"))
+      ; rename and move the repository to cached repos
+      (define name (format "~a-~a-~a" user repo commit-id))
+      
+      (define repo-dir-in-repos (build-path the-repos-dir (format "~a" name)))
+      (rename-file-or-directory repo-dir-in-tmp repo-dir-in-repos)
+      (current-directory original-dir)
+      (values name repo-dir-in-repos))))
 
 (module require-github racket
   (require racket/require-syntax
@@ -115,7 +158,8 @@
            (define filename-str (format "~a/~a" dir-str path))
            (unless (directory-exists? (build-path (current-directory) dir-str))
              (displayln (format "Downloading from GitHub." ))
-             (download-github user repo #:branch branch #:commit-id commit-id)
+             (clone-github user repo #:branch branch #:commit-id commit-id)
+             ;(download-github user repo #:branch branch #:commit-id commit-id)
              (displayln "Done."))
            (datum->syntax stx `(file ,filename-str)))]
         [else
@@ -127,6 +171,12 @@
   ; Explicit commit-id is fast. 
   ; (no http request necessary if the the repository is cached)
   (require (github soegaard this-and-that master faf74b7 "split-between.rkt"))
+  ; the old version does not provide anything 
+  ; (but it prints values when required)
+  (require (github soegaard this-and-that master a9442d37a1db11b14c3f0a6bb91766baa811232f 
+                   "split-between.rkt"))
+  ; Using prefixes one can compare two versions for debugging purposes!
+  
   (displayln "Running tests in the test submodule.")
   (split-between (λ (x y) (not (= x y))) '(1 1 2 3 3 4 5 5))
   ; Use head as commit-id to get the latest version.
@@ -137,9 +187,7 @@
 
 ;(require rackunit)
 ;(check-equal? (url->string
-;               (github-zip-url 'soegaard 'this-and-that))
-;              "https://github.com/soegaard/this-and-that/zipball/master")
+;                 (github-zip-url 'soegaard 'this-and-that))
+;                "https://github.com/soegaard/this-and-that/zipball/master")
 ;(check-equal? (github-zip-saveas-filename 'soegaard 'this-and-that 'master)
-;             "soegaard-this-and-that-master.zip")
-
-;(download-github 'soegaard 'this-and-that)
+;                "soegaard-this-and-that-master.zip")
